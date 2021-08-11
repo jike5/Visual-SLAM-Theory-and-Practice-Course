@@ -1,0 +1,7 @@
+CMAKE_MINIMUM_REQUIRED( VERSION 2.8 )
+set( CMAKE_CXX_FLAGS "-std=c++11 -O3" )
+set(Ceres_DIR /usr/local/lib/camke/Ceres)
+find_package(Ceres REQUIRED)
+include_directories(${Ceres_INCLUDE_DIRS})
+add_executable(t1 t1.cpp)
+target_link_libraries(${Ceres_LIBRARIES})
