@@ -114,11 +114,11 @@ void computeAngle(const cv::Mat &image, vector<cv::KeyPoint> &keypoints) {
 	    if (kp.pt.x<8 || kp.pt.y < 8 || kp.pt.y>MaxCols-7 || kp.pt.x>MaxRows)
             continue;
 	    double m01 = 0; double m10 = 0;
-	    for(int v = kp.pt.x-half_patch_size; v < kp.pt.x+half_patch_size; v++)
-	        for(int u = kp.pt.y - half_patch_size; u < kp.pt.y+half_patch_size; u++)
+	    for(int x = kp.pt.x-half_patch_size; x < kp.pt.x+half_patch_size; x++)
+	        for(int y = kp.pt.y - half_patch_size; y < kp.pt.y+half_patch_size; y++)
 	        {
-	            m01 += u*image.at<double>(u, v);
-	            m10 += v*image.at<double>(u, v);
+	            m01 += y*image.at<double>(y, x);
+	            m10 += x*image.at<double>(y, x);
 	        }
         kp.angle = 180/pi*std::atan2(m01, m10); // compute kp.angle
         // END YOUR CODE HERE
@@ -395,11 +395,24 @@ void computeORBDesc(const cv::Mat &image, vector<cv::KeyPoint> &keypoints, vecto
         float SinTheta = std::sin(kp.angle*pi/180);
         for (int i = 0; i < 256; i++) {
             // START YOUR CODE HERE (~7 lines)
-            cv::Point2f p(ORB_pattern[i],ORB_pattern[i+1]);
+            cv::Point2f p(ORB_pattern[i+0],ORB_pattern[i+1]);
             cv::Point2f q(ORB_pattern[i+2], ORB_pattern[i+3]);
-            cv::Point2f pp = cv::Point2f(cos)
-            d[i] = 0;  // if kp goes outside, set d.clear()
-
+            cv::Point2f pp = cv::Point2f(CosTheta*p.x-SinTheta*p.y, SinTheta*p.x+CosTheta*p.y) + kp.pt;
+            cv::Point2f qq = cv::Point2f(CosTheta*q.x-SinTheta*q.y, SinTheta*q.x+CosTheta*q.y) + kp.pt;
+            if(pp.x<0 || pp.y<0 || qq.x<0 || qq.y<0 ||
+                pp.x >= image.cols || pp.y >= image.rows || qq.x >= image.cols || qq.y >= image.rows)
+            {
+                d.clear();
+                break;
+            }
+            else
+            {
+                if(image.at<uchar>(pp.y, pp.x) <= image.at<uchar>(qq.y, qq.x))
+                    d[i] = 1;
+                else{
+                    d[i] = 0;// if kp goes outside, set d.clear()
+                }
+            }
 	    // END YOUR CODE HERE
         }
         desc.push_back(d);
@@ -418,7 +431,50 @@ void bfMatch(const vector<DescType> &desc1, const vector<DescType> &desc2, vecto
     int d_max = 50;
 
     // START YOUR CODE HERE (~12 lines)
-    // find matches between desc1 and desc2. 
+    // find matches between desc1 and desc2.
+    for(int i = 0; i < desc1.size(); i++)
+    {
+        if(desc1.at(i).size() == 0)
+        {
+            continue;
+        }
+        int Min_d = 50;
+        int Min_j = 0;
+        for(int j = 0; j < desc2.size(); j++)
+        {
+            if(desc2.at(j).size() == 0)
+            {
+                continue;
+            }
+            int S = 0;
+            for(int b = 0; b < 256; b++)
+            {
+                int B1 = desc1.at(i).at(b);
+                int B2 = desc2.at(j).at(b);
+                if (B1 - B2 == 0)
+                {
+                    S++;
+                }
+            }
+            if(S <= Min_d)
+            {
+                Min_d = S;
+                Min_j = j;
+            }
+        }
+        if (Min_d < d_max)
+        {
+            cv::DMatch m;
+            m.queryIdx = i;
+            m.trainIdx = Min_j;
+            m.distance = Min_d;
+            matches.push_back(m);
+        }
+        else
+        {
+            continue;
+        }
+    }
     // END YOUR CODE HERE
 
     for (auto &m: matches) {
