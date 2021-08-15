@@ -107,20 +107,26 @@ int main(int argc, char **argv) {
 // compute the angle
 void computeAngle(const cv::Mat &image, vector<cv::KeyPoint> &keypoints) {
     int half_patch_size = 8;
-    int MaxRows = image.rows;
-    int MaxCols = image.cols;
     for (auto &kp : keypoints) {
-	// START YOUR CODE HERE (~7 lines)
-	    if (kp.pt.x<8 || kp.pt.y < 8 || kp.pt.y>MaxCols-7 || kp.pt.x>MaxRows)
+        // START YOUR CODE HERE (~7 lines)
+        float m01 = 0, m10 = 0;
+	    if (kp.pt.x < half_patch_size || kp.pt.y < half_patch_size ||
+	        kp.pt.x > image.cols - half_patch_size || kp.pt.y > image.rows - half_patch_size)
             continue;
-	    double m01 = 0; double m10 = 0;
-	    for(int x = kp.pt.x-half_patch_size; x < kp.pt.x+half_patch_size; x++)
-	        for(int y = kp.pt.y - half_patch_size; y < kp.pt.y+half_patch_size; y++)
+	    else{
+	        for(int row = -half_patch_size; row < half_patch_size; ++row)
 	        {
-	            m01 += y*image.at<double>(y, x);
-	            m10 += x*image.at<double>(y, x);
+	            const auto *row_ptr = image.ptr<uchar>(kp.pt.y + row);
+	            for(int col = -half_patch_size; col < half_patch_size; ++col)
+	            {
+	                const auto *data_ptr = &row_ptr[size_t(kp.pt.x + col) * image.channels()];
+	                uchar pixel = *data_ptr;
+	                m10 += col * pixel; // here col is offset of x axis
+	                m01 += row * pixel; // here row is offset of y axis
+	            }
 	        }
-        kp.angle = 180/pi*std::atan2(m01, m10); // compute kp.angle
+	    }
+	    kp.angle = std::atan2(m01, m10)/pi*360;
         // END YOUR CODE HERE
     }
     return;
@@ -391,15 +397,15 @@ int ORB_pattern[256 * 4] = {
 void computeORBDesc(const cv::Mat &image, vector<cv::KeyPoint> &keypoints, vector<DescType> &desc) {
     for (auto &kp: keypoints) {
         DescType d(256, false); // vector<bool>
-        float CosTheta = std::cos(kp.angle*pi/180);
-        float SinTheta = std::sin(kp.angle*pi/180);
+        float CosTheta = std::cos(kp.angle*pi/180.0);
+        float SinTheta = std::sin(kp.angle*pi/180.0);
         for (int i = 0; i < 256; i++) {
             // START YOUR CODE HERE (~7 lines)
-            cv::Point2f p(ORB_pattern[i+0],ORB_pattern[i+1]);
-            cv::Point2f q(ORB_pattern[i+2], ORB_pattern[i+3]);
+            cv::Point2f p(ORB_pattern[4*i],ORB_pattern[4*i+1]);
+            cv::Point2f q(ORB_pattern[4*i+2], ORB_pattern[4*i+3]);
             cv::Point2f pp = cv::Point2f(CosTheta*p.x-SinTheta*p.y, SinTheta*p.x+CosTheta*p.y) + kp.pt;
             cv::Point2f qq = cv::Point2f(CosTheta*q.x-SinTheta*q.y, SinTheta*q.x+CosTheta*q.y) + kp.pt;
-            if(pp.x<0 || pp.y<0 || qq.x<0 || qq.y<0 ||
+            if(pp.x < 0 || pp.y < 0 || qq.x < 0 || qq.y < 0 ||
                 pp.x >= image.cols || pp.y >= image.rows || qq.x >= image.cols || qq.y >= image.rows)
             {
                 d.clear();
@@ -407,11 +413,7 @@ void computeORBDesc(const cv::Mat &image, vector<cv::KeyPoint> &keypoints, vecto
             }
             else
             {
-                if(image.at<uchar>(pp.y, pp.x) <= image.at<uchar>(qq.y, qq.x))
-                    d[i] = 1;
-                else{
-                    d[i] = 0;// if kp goes outside, set d.clear()
-                }
+                d[i] = image.at<uchar>(pp.y, pp.x) <= image.at<uchar>(qq.y, qq.x);
             }
 	    // END YOUR CODE HERE
         }
@@ -434,27 +436,18 @@ void bfMatch(const vector<DescType> &desc1, const vector<DescType> &desc2, vecto
     // find matches between desc1 and desc2.
     for(int i = 0; i < desc1.size(); i++)
     {
-        if(desc1.at(i).size() == 0)
-        {
+        if(desc1.at(i).empty())
             continue;
-        }
         int Min_d = 50;
         int Min_j = 0;
         for(int j = 0; j < desc2.size(); j++)
         {
             if(desc2.at(j).size() == 0)
-            {
                 continue;
-            }
             int S = 0;
             for(int b = 0; b < 256; b++)
             {
-                int B1 = desc1.at(i).at(b);
-                int B2 = desc2.at(j).at(b);
-                if (B1 - B2 == 0)
-                {
-                    S++;
-                }
+                S += (desc1[i][b] == desc2[j][b]) ? 0 : 1;
             }
             if(S <= Min_d)
             {
