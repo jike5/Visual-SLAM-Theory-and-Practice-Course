@@ -16,8 +16,3 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(tracksvd TrackAlignment_SVD.cpp)
 target_link_libraries(tracksvd ${Sophus_LIBRARIES})
 target_link_libraries(tracksvd ${Pangolin_LIBRARIES})
-
-add_executable(test test.cpp)
-target_link_libraries(test ${Sophus_LIBRARIES})
-target_link_libraries(test ${Pangolin_LIBRARIES})
-target_link_libraries(test ${OpenCV_LIBS})
