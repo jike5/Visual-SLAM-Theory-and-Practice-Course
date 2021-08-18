@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED( VERSION 2.8 )
-set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
+# set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
 
-list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+# list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package(Ceres REQUIRED)
 include_directories(${Ceres_INCLUDE_DIRS})
