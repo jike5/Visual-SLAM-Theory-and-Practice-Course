@@ -99,8 +99,8 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < 6; i++) {  // 1~10
         cv::Mat img = cv::imread((fmt_others % i).str(), 0);
-        DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);    // first you need to test single layer
-        // DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
+        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);    // first you need to test single layer
+        DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
     }
 }
 
@@ -119,10 +119,12 @@ void DirectPoseEstimationSingleLayer(
     double cost = 0, lastCost = 0;
     int nGood = 0;  // good projections
     VecVector2d goodProjection;
+    VecVector2d goodRef;
 
     for (int iter = 0; iter < iterations; iter++) {
         nGood = 0;
         goodProjection.clear();
+        goodRef.clear();
 
         // Define Hessian and bias
         Matrix6d H = Matrix6d::Zero();  // 6x6 Hessian
@@ -148,6 +150,7 @@ void DirectPoseEstimationSingleLayer(
                 Z2_inv = Z_inv * Z_inv;
             nGood++;
             goodProjection.push_back(Eigen::Vector2d(x2, y2));
+            goodRef.push_back(Eigen::Vector2d(x1, y1));
 
             // and compute error and jacobian
             for (int x = -half_patch_size; x < half_patch_size; x++)
@@ -218,9 +221,16 @@ void DirectPoseEstimationSingleLayer(
         cv::rectangle(img1_show, cv::Point2f(px[0] - 2, px[1] - 2), cv::Point2f(px[0] + 2, px[1] + 2),
                       cv::Scalar(0, 250, 0));
     }
-    for (auto &px: goodProjection) {
-        cv::rectangle(img2_show, cv::Point2f(px[0] - 2, px[1] - 2), cv::Point2f(px[0] + 2, px[1] + 2),
-                      cv::Scalar(0, 250, 0));
+//    for (auto &px: goodProjection) {
+//        cv::rectangle(img2_show, cv::Point2f(px[0] - 2, px[1] - 2), cv::Point2f(px[0] + 2, px[1] + 2),
+//                      cv::Scalar(0, 250, 0));
+//    }
+    for (size_t i = 0; i < goodProjection.size(); i++){
+        auto p_ref = goodRef[i];
+        auto p_cur = goodProjection[i];
+        cv::circle(img2_show, cv::Point2f(p_cur[0], p_cur[1]), 1, cv::Scalar(0, 250, 0), 2);
+        cv::line(img2_show,cv::Point2f(p_ref[0], p_ref[1]),
+                 cv::Point2f(p_cur[0], p_cur[1]), cv::Scalar(0, 250, 0), 1);
     }
     cv::imshow("reference", img1_show);
     cv::imshow("current", img2_show);
@@ -243,7 +253,22 @@ void DirectPoseEstimationMultiLayer(
     // create pyramids
     vector<cv::Mat> pyr1, pyr2; // image pyramids
     // TODO START YOUR CODE HERE
-
+    for (int level = 0; level < pyramids; level++)
+    {
+        if (level == 0){
+            pyr1.push_back(img1);
+            pyr2.push_back(img2);
+        }
+        else {
+            cv::Mat pyimg1, pyimg2;
+            cv::resize(pyr1[level - 1], pyimg1,
+                       cv::Size(round(pyramid_scale * pyr1[level-1].cols), round(pyramid_scale * pyr1[level-1].rows)));
+            cv::resize(pyr2[level - 1], pyimg2,
+                       cv::Size(round(pyramid_scale * pyr2[level-1].cols), round(pyramid_scale * pyr2[level-1].rows)));
+            pyr1.push_back(pyimg1);
+            pyr2.push_back(pyimg2);
+        }
+    }
     // END YOUR CODE HERE
 
     double fxG = fx, fyG = fy, cxG = cx, cyG = cy;  // backup the old values
@@ -255,7 +280,10 @@ void DirectPoseEstimationMultiLayer(
 
         // TODO START YOUR CODE HERE
         // scale fx, fy, cx, cy in different pyramid levels
-
+        fx = fxG * scales[level];
+        fy = fyG * scales[level];
+        cx = cxG * scales[level];
+        cy = cyG * scales[level];
         // END YOUR CODE HERE
         DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21);
     }
