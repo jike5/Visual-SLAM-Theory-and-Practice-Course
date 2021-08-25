@@ -12,10 +12,11 @@ Find_Package(Ceres REQUIRED)
 Find_Package(Sophus REQUIRED)
 Find_Package(CSparse REQUIRED)
 FIND_PACKAGE(Pangolin REQUIRED)
+FIND_PACKAGE(OpenCV REQUIRED)
 
-SET(G2O_LIBS g2o_csparse_extension g2o_stuff g2o_core cxsparse)
+SET(G2O_LIBS g2o_csparse_extension g2o_stuff g2o_core cxsparse g2o_types_sba)
 
-include_directories(${PROJECT_SOURCE_DIR} ${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR} ${Pangolin_INCLUDE_DIRS})
+include_directories(${PROJECT_SOURCE_DIR} ${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR} ${Pangolin_INCLUDE_DIRS}  ${OpenCV_INCLUDE_DIRS})
 
 add_executable(directBA directBA.cpp)
 target_link_libraries(directBA ${G2O_LIBS} ${Pangolin_LIBRARIES} ${OpenCV_LIBS})

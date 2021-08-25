@@ -16,6 +16,7 @@ using namespace std;
 #include <g2o/core/robust_kernel_impl.h>
 #include <g2o/types/sba/types_six_dof_expmap.h>
 
+
 #include <Eigen/Core>
 #include <sophus/se3.hpp>
 #include <opencv2/opencv.hpp>
@@ -96,19 +97,81 @@ public:
         double py = pc[1] / pc[2];
         cv::Point2d pro = cv::Point2d(fx*px + cx, fy*py + cy);
         Vector16d CurColor, OriColor;
-        int i = 0;
-        for(int du = -2; du < 2; ++du){
-            for(int dv = -2; dv < 2; ++dv){
-                CurColor[i] =  GetPixelValue(targetImg, pro.x + du, pro.y + dv);
-                OriColor[i] = origColor[i];
-                ++i;
-            }
+        if (pro.x - 2 < 0 || pro.y - 2 < 0 || pro.x + 1 > targetImg.cols || pro.y + 1 > targetImg.rows){
+            _error = Vector16d::Zero();
+            ifOut = true;
         }
-        _error = OriColor -CurColor;
+        else {
+            int i = 0;
+            for(int du = -2; du < 2; ++du){
+                for(int dv = -2; dv < 2; ++dv){
+                    CurColor[i] =  GetPixelValue(targetImg, pro.x + du, pro.y + dv);
+                    OriColor[i] = origColor[i];
+                    ++i;
+                }
+            }
+            _error = OriColor -CurColor;
+        }
         // END YOUR CODE HERE
     }
 
     // Let g2o compute jacobian for you
+    // my jacobin
+/*
+    virtual void linearizeOplus() override {
+        if(ifOut){
+            _jacobianOplusXi = Eigen::Matrix<double, 16, 3>::Zero();
+            _jacobianOplusXj = Eigen::Matrix<double, 16, 6>::Zero();
+        }
+        else{
+            auto v0 = (g2o::VertexSBAPointXYZ *) _vertices[0];
+            auto v1 = (VertexSophus *) _vertices[1];
+            Eigen::Vector3d P = v0->estimate();
+            Eigen::Vector3d Pc = v1->estimate() * P;
+            Eigen::Matrix<double, 1, 2> J_I_u;
+            Eigen::Matrix<double, 2, 3> J_u_q;
+            Eigen::Matrix<double, 2, 6> J_u_ksi;
+
+            float X = Pc[0], Y = Pc[1], Z = Pc[2];
+            float Z_inv = 1.0 / Z, Z2 = Z * Z;
+            float Z2_inv = Z_inv * Z_inv;
+
+            double x = fx * X * Z_inv + cx;
+            double y = fy * Y * Z_inv + cy;
+
+            J_u_q << fx * Z_inv,
+                    0,
+                    -fx * X * Z2_inv,
+                    0,
+                    fy * Z_inv,
+                    -fy * Y * Z2_inv;
+            J_u_ksi << fx * Z_inv,
+                        0,
+                        -fx * X * Z2_inv,
+                        -fx * X * Y * Z2_inv,
+                        fx + fx * X * X * Z2_inv,
+                        -fx * Y * Z_inv,
+                        0,
+                        fy * Z_inv,
+                        -fy * Y * Z2_inv,
+                        -fy - fy * Y * Y * Z2_inv,
+                        fy * X * Y * Z2_inv,
+                        fy * X * Z_inv;
+            int i = 0;
+            for(int du = -2; du < 2; ++du){
+                for(int dv = -2; dv < 2; ++dv){
+                    J_I_u[0] = 0.5 * (GetPixelValue(targetImg, du + x - 1, dv + y) -
+                            GetPixelValue(targetImg, du + x + 1, dv + y));
+                    J_I_u[1] = 0.5 * (GetPixelValue(targetImg, du + x, dv + y - 1) -
+                            GetPixelValue(targetImg, du + x, dv + y + 1));
+                    _jacobianOplusXi.block<1, 3>(i, 0) = -J_I_u * J_u_q * v1->estimate().rotationMatrix();
+                    _jacobianOplusXj.block<1, 6>(i, 0) = -J_I_u * J_u_ksi;
+                    ++i;
+                }
+            }
+        }
+    }
+*/
 
     virtual bool read(istream &in) {}
 
@@ -117,13 +180,13 @@ public:
 private:
     cv::Mat targetImg;  // the target image
     float *origColor = nullptr;   // 16 floats, the color of this point
+    bool ifOut = false; // point3D_project out of the image
 };
 
 // plot the poses and points for you, need pangolin
 void Draw(const VecSE3 &poses, const VecVec3d &points);
 
 int main(int argc, char **argv) {
-
     // read poses and points
     VecSE3 poses;
     VecVec3d points;
@@ -142,7 +205,6 @@ int main(int argc, char **argv) {
         if (!fin.good()) break;
     }
     fin.close();
-
 
     vector<float *> color;
     fin.open(points_file);
@@ -169,19 +231,48 @@ int main(int argc, char **argv) {
     }
 
     // build optimization problem
-    typedef
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3>> BlockSolverType;
+    typedef g2o::LinearSolverDense<BlockSolverType::PoseMatrixType> LinearSolverType;
 
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3>> DirectBlock;  // 求解的向量是6＊1的
-    DirectBlock::LinearSolverType *linearSolver = new g2o::LinearSolverDense<DirectBlock::PoseMatrixType>();
-    DirectBlock *solver_ptr = new DirectBlock(linearSolver);
-    g2o::OptimizationAlgorithmLevenberg *solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr); // L-M
+    auto solver = new g2o::OptimizationAlgorithmLevenberg(
+            g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>())
+            );
+
     g2o::SparseOptimizer optimizer;
     optimizer.setAlgorithm(solver);
     optimizer.setVerbose(true);
 
     // TODO add vertices, edges into the graph optimizer
     // START YOUR CODE HERE
-
+    vector<VertexSophus *> vector_VertexSophus;
+    vector<g2o::VertexSBAPointXYZ *> vector_VertexSBAPointXYZ;
+    // add vertex
+    for (int i = 0; i < points.size(); ++i){
+        g2o::VertexSBAPointXYZ *v = new g2o::VertexSBAPointXYZ;
+        v->setId(i);
+        v->setEstimate(points[i]);
+        v->setMarginalized(true);
+        optimizer.addVertex(v);
+        vector_VertexSBAPointXYZ.push_back(v);
+    }
+    for (int i = 0; i < poses.size(); ++i){
+        VertexSophus *v = new VertexSophus;
+        v->setId(i + points.size());
+        v->setEstimate(poses[i]);
+        optimizer.addVertex(v);
+        vector_VertexSophus.push_back(v);
+    }
+    // add edge
+    for (int i = 0; i < poses.size(); ++i){
+        for (int j = 0; j < points.size(); ++j){
+            EdgeDirectProjection * edge = new EdgeDirectProjection(color[j], images[i]);
+            edge->setVertex(0, vector_VertexSBAPointXYZ[j]);
+            edge->setVertex(1, vector_VertexSophus[i]);
+            edge->setInformation(Eigen::Matrix<double, 16, 16>::Identity());
+            edge->setRobustKernel(new g2o::RobustKernelHuber());
+            optimizer.addEdge(edge);
+        }
+    }
     // END YOUR CODE HERE
 
     // perform optimization
@@ -190,9 +281,20 @@ int main(int argc, char **argv) {
 
     // TODO fetch data from the optimizer
     // START YOUR CODE HERE
+    for(int i = 0; i < points.size(); ++i){
+        auto vertex = vector_VertexSBAPointXYZ[i];
+        auto estimate = vertex->estimate();
+        points[i] = estimate;
+    }
+    for(int j = 0; j < poses.size(); ++j){
+        auto vertex = vector_VertexSophus[j];
+        auto estimate = vertex->estimate();
+        poses[j] = estimate;
+    }
     // END YOUR CODE HERE
 
     // plot the optimized points and poses
+    std::cout << "Start Draw ..." << endl;
     Draw(poses, points);
 
     // delete color data
